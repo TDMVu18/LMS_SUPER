@@ -1,0 +1,14 @@
+﻿API:
+1. Grammar check:
+Input: text từ php (click để gọi api)
+Output: html marked
+2. Recommend:
+Input: list id
+Output: list id
+3. Generate:
+API download: file pdf
+Input: id assigment - CSDL - truyen vo bang summ
+4. Fact check
+Input: bang summ - cau hoi
+Output: fact
+
