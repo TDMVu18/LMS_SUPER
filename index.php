@@ -20,6 +20,6 @@ $response = curl_exec($ch);
 
 curl_close($ch);
 
-// nó response lại theo dạng json ở đây
+// nó response lại theo array của python ở đây
 echo $response;
 ?>
