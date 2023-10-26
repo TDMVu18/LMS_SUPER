@@ -1,58 +1,74 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 import torch
-import json
-import textract
 import sys
-from transformers import T5ForConditionalGeneration, T5Tokenizer
 import pandas as pd
+import difflib
+import random
+import string
 import numpy as np
+from transformers import T5ForConditionalGeneration, T5Tokenizer
+import json
 import re
+from sqlalchemy.dialects.mysql import LONGTEXT
+import textract
 from mlxtend.frequent_patterns import apriori, association_rules
 import en_core_web_sm
 spc_en = en_core_web_sm.load()
 
-# model_name = "t5-small"
-# tokenizer = T5Tokenizer.from_pretrained(model_name)
-# model = T5ForConditionalGeneration.from_pretrained(model_name)
-# # model_name = 'deep-learning-analytics/GrammarCorrector'
-# text = textract.process('Report.pdf', encoding='utf-8')
-# all_paragraphs = re.split(r'\s{2,}', text.decode('utf-8'))
-# num_paragraph= len(text)
-# list_para = []
-# list_para = [para for para in all_paragraphs if len(para.split()) >= 20]
-# summaries = []
-# for i,paragraph in enumerate(list_para):
-#     input_text = "summarize: " + paragraph
-#     input_ids = tokenizer.encode(input_text, return_tensors="pt", max_length=1024, truncation=True)
-#     summary_ids = model.generate(input_ids, max_length=150, min_length=50, length_penalty=2.0, num_beams=4, early_stopping=True)
-#     summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-#     summaries.append(summary)
-# result = [{"paragraph": list_para[i], "summary": summaries[i]} for i in range(len(summaries))]
 
-# sys.path.insert(1, 'question_generator')
-
-# from questiongenerator import QuestionGenerator
-# qg = QuestionGenerator()
-# text = result[2]["summary"]
-# q  = qg.generate(text, num_questions=3)
-# for i in range(len(q)): print(q[i]["question"])
 
 app = Flask(__name__)
 app.secret_key = "Secret Key"
 
-app.config["SQLALCHEMY_DATABASE_URI"] = 'mysql://root:''@localhost/moodle'
+app.config["SQLALCHEMY_DATABASE_URI"] = 'mysql://root:''@localhost/lms'
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-#apriori cal
+class Assignment(db.Model):
+    id = db.Column(db.String(21), primary_key = True)
+    summarize = db.Column(LONGTEXT)
+    issumm = db.Column(db.Integer)
+    filepath = db.Column(db.String(100))
+    question = db.Column(LONGTEXT)
+
+    def __init__(self, id, summarize, issumm, filepath, question):
+        self.id = id
+        self.summarize = summarize
+        self.issumm = issumm
+        self.filepath = filepath
+        self.question = question
+        
+class Submit(db.Model):
+    id = db.Column(db.String(21), primary_key = True)
+    answer = db.Column(db.String(255))
+    corrected_answer = db.Column(db.String(255))
+    rank = db.Column(db.String(100))
+    id_ass = db.Column(db.String(21))
+    id_user = db.Column(db.String(21))
+
+    def __init__(self, id, answer, corrected_answer, rank, id_ass, id_user):
+        self.id = id
+        self.answer = answer
+        self.corrected_answer = corrected_answer
+        self.rank = rank
+        self.id_ass = id_ass
+        self.id_user = id_user
+
+# Recommend khóa học
 course = pd.read_csv("archive/course.csv")
 course = course.drop(['Unnamed: 0', 'Course_id'], axis=1)
 course_ids = [str(i).zfill(4) for i in range(1, len(course) + 1)]
 
 # Thêm cột "Course_id" vào DataFrame
 course.insert(0, 'Course_id', course_ids)
+def generate_id(length):
+    characters = string.ascii_letters + string.digits
+
+    random_string = ''.join(random.choice(characters) for _ in range(length))
+
+    return random_string
 
 history = pd.read_csv("history.csv", encoding='latin-1')
 data = list(history['History_course_id'].apply(lambda x:x.split(",") ))
@@ -125,9 +141,85 @@ def zip4id(id):
         stringid = '0' * (4 - len(stringid)) + stringid
     return stringid
 
+model_name = 'gec_03' # model path
+torch_device = 'cuda' if torch.cuda.is_available() else 'cpu'
+tokenizer = T5Tokenizer.from_pretrained(model_name)
+model = T5ForConditionalGeneration.from_pretrained(model_name).to(torch_device)
+
+def correct_grammar(input_text,num_return_sequences):
+  batch = tokenizer([input_text],truncation=True,padding='max_length',max_length=64, return_tensors="pt").to(torch_device)
+  translated = model.generate(**batch,max_length=64,num_beams=4, num_return_sequences=num_return_sequences, temperature=1.5)
+  tgt_text = tokenizer.batch_decode(translated, skip_special_tokens=True)
+  return tgt_text
+
+def highlight(correct_sentence, error_Sentence):
+    differ = difflib.Differ()
+    diff = list(differ.compare(correct_sentence.split(), error_Sentence.split()))
+
+    highlighted_diff = []
+    for word in diff:
+        if word.startswith(' '):
+            highlighted_diff.append(word[2:])
+        elif word.startswith('- '):
+            highlighted_diff.append('<span style="background-color: 7ED957;">{}</span>'.format(word[2:]))
+    
+    highlighted_sentence = ' '.join(highlighted_diff)
+
+    return highlighted_sentence
+
+#question-gen:
+
+model_name = "t5-small"
+tokenizer = T5Tokenizer.from_pretrained(model_name)
+model = T5ForConditionalGeneration.from_pretrained(model_name)
+
+def summarize_file(filepath):
+    text = textract.process(filepath, encoding='utf-8')
+    # Sử dụng biểu thức chính quy để cắt thành các đoạn văn
+    all_paragraphs = re.split(r'\s{2,}', text.decode('utf-8'))
+    num_paragraph= len(text)
+    list_para = []
+    list_para = [para for para in all_paragraphs if len(para.split()) >= 20] # list of paragraphs which have more than 20 words
+    summaries = []
+    for i,paragraph in enumerate(list_para):
+        input_text = "summarize: " + paragraph
+        input_ids = tokenizer.encode(input_text, return_tensors="pt", max_length=1024, truncation=True)
+        summary_ids = model.generate(input_ids, max_length=150, min_length=50, length_penalty=2.0, num_beams=4, early_stopping=True)
+        summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+        summaries.append(summary)
+
+    result = [{"paragraph": list_para[i], "summary": summaries[i]} for i in range(len(summaries))]
+    return result
+
+
+sys.path.insert(1, 'question_generator')
+from questiongenerator import QuestionGenerator
+qg = QuestionGenerator()
+
+def new_question(result):
+    pick_summ = len(result)
+    summ_cal = random.sample(range(pick_summ), 3)
+    question = []
+    for i in range(len(summ_cal)):
+        text = result[summ_cal[i]]["summary"]
+        q  = qg.generate(text, num_questions=1)
+        question.append(q)
+    return question
 
 
 
+
+
+@app.route('/get-file-path', methods=['POST'])
+def process_uploaded_file():
+    uploaded_file_path = request.form['uploaded_file_path']
+    ass_id = generate_id(10)
+    summ = summarize_file(uploaded_file_path)
+    question = new_question(summ)
+    my_data = Assignment(ass_id, "content summarized", 1, str(uploaded_file_path), str(question))
+    db.session.add(my_data)
+    db.session.commit()
+    return question
 
 @app.route('/recommend-id', methods=['POST'])
 def apriori():
@@ -156,134 +248,17 @@ def apriori():
         print(course_target)
         return course_target
     else:
-        return jsonify({'error': 'error'})
+        return jsonify({'Error': 'Request Failed UwU'})
     
+@app.route('/grammar-correct', methods=['POST'])
+def grammar_corr():
+    data = request.get_json()
+    sentence = data['corr_text']
+    num = int(data['num_gen'])
+    correct_list = correct_grammar(sentence, 2)
+    for i in range(num):
+        correct_list[i] = highlight(correct_list[i], sentence)    
+    return correct_list
 
-
-
-# class Mdl_assign(db.Model):
-#     id = db.Column(db.Integer, primary_key = True)
-#     course = db.Column(db.String(100))
-#     name = db.Column(db.String(100))
-#     intro = db.Column(db.String(100))
-#     introformat = db.Column(db.String(100))
-#     alwaysshowdescription = db.Column(db.String(100))
-#     nosubmissions = db.Column(db.String(100))
-#     submissiondrafts = db.Column(db.String(100))
-#     sendnotifications = db.Column(db.String(100))
-#     sendlatenotifications = db.Column(db.String(100))
-#     duedate = db.Column(db.String(100))
-#     allowsubmissionsfromdate = db.Column(db.String(100))
-#     grade = db.Column(db.String(100))
-#     timemodified = db.Column(db.String(100))
-#     requiresubmissionstatement = db.Column(db.String(100))
-#     completionsubmit = db.Column(db.String(100))
-#     cutoffdate = db.Column(db.String(100))
-#     gradingduedate = db.Column(db.String(100))
-#     teamsubmission = db.Column(db.String(100))
-#     requireallteammemberssubmit = db.Column(db.String(100))
-#     teamsubmissiongroupingid = db.Column(db.String(100))
-#     blindmarking = db.Column(db.String(100))
-#     hidegrader = db.Column(db.String(100))
-#     revealidentities = db.Column(db.String(100))
-#     attemptreopenmethod = db.Column(db.String(100))
-#     maxattempts = db.Column(db.String(100))
-#     markingworkflow = db.Column(db.String(100))
-#     markingallocation = db.Column(db.String(100))
-#     sendstudentnotifications = db.Column(db.String(100))
-#     preventsubmissionnotingroup = db.Column(db.String(100))
-#     activity = db.Column(db.String(100))
-#     activityformat = db.Column(db.String(100))
-#     timelimit = db.Column(db.String(100))
-#     submissionattachments = db.Column(db.String(100))
-#     def __init__(self, id, course, name, intro, introformat, alwaysshowdescription, nosubmissions, submissiondrafts, 
-#     sendnotifications, sendlatenotifications, duedate, allowsubmissionsfromdate, grade, timemodified,requiresubmissionstatement, completionsubmit, cutoffdate,
-#     gradingduedate, teamsubmission, requireallteammemberssubmit, teamsubmissiongroupingid, blindmarking, hidegrader, revealidentities, attemptreopenmethod, maxattempts,
-#     markingworkflow, markingallocation, sendstudentnotifications, preventsubmissionnotingroup, activity, activityformat, timelimit, submissionattachments):
-#         self.id = id
-#         self.course = course
-#         self.name = name
-#         self.intro = intro
-#         self.introformat = introformat
-#         self.alwaysshowdescription = alwaysshowdescription
-#         self.nosubmissions = nosubmissions
-#         self.submissiondrafts = submissiondrafts
-#         self.sendnotifications = sendnotifications
-#         self.sendlatenotifications = sendlatenotifications
-#         self.duedate = duedate
-#         self.allowsubmissionsfromdate = allowsubmissionsfromdate
-#         self.grade = grade
-#         self.timemodified = timemodified
-#         self.requiresubmissionstatement = requiresubmissionstatement
-#         self.completionsubmit = completionsubmit
-#         self.cutoffdate = cutoffdate
-#         self.gradingduedate = gradingduedate
-#         self.teamsubmission = teamsubmission
-#         self.requireallteammemberssubmit = requireallteammemberssubmit
-#         self.teamsubmissiongroupingid = teamsubmissiongroupingid
-#         self.blindmarking = blindmarking
-#         self.hidegrader = hidegrader
-#         self.revealidentities = revealidentities
-#         self.attemptreopenmethod = attemptreopenmethod
-#         self.maxattempts = maxattempts
-#         self.markingworkflow = markingworkflow
-#         self.markingallocation = markingallocation
-#         self.sendstudentnotifications = sendstudentnotifications
-#         self.preventsubmissionnotingroup = preventsubmissionnotingroup
-#         self.activity = activity
-#         self.activityformat = activityformat
-#         self.timelimit = timelimit
-#         self.submissionattachments = submissionattachments
-            
-# @app.route('/post', methods=['POST'])
-# def get_data():
-    
-#     if request.method == 'POST':
-#         record_id = request.form["id"]
-#         record_to_update = Mdl_assign.query.get(record_id)
-#         if record_to_update:
-#             value = generate_question()
-#             record_to_update.intro = value
-#         db.session.commit()
-#         return "Update Success"
-          
-
-# @app.route('/input-text', methods = ['GET','POST'])
-# def insert():
-
-#     if request.method == 'POST':
-
-#         text = request.form["text"]
-#         my_data = Prob(text)
-#         db.session.add(my_data)
-#         db.session.commit()
-
-#         return jsonify({"message": "Dữ liệu đã được thêm vào bảng Prob thành công."})
-
-# @app.route('/predict', methods=['POST'])
-# def predict():
-#     if request.method == 'POST':
-#         id_to_get = request.form.get('id')
-
-#         prob_data = Prob.query.filter_by(id=id_to_get).first()
-#         if prob_data is None:
-#             return jsonify({"message": "Không tìm thấy dòng với id đã cho trong bảng Prob."}), 404
-
-#         text = prob_data.text
-
-#         sentiment = predict_function(text)
-
-#         result_data = Result(text=text, sentiment=sentiment)
-#         db.session.add(result_data)
-#         db.session.commit()
-        
-#         return jsonify({"message": "Dữ liệu đã được tính toán và thêm vào bảng Result thành công."})
-        
-# @app.route('/delete/<id>/', methods = ['GET', 'POST'])
-# def delete(id):
-#     my_data = Payload.query.get(id)
-#     db.session.delete(my_data)
-#     db.session.commit()
-#     return redirect(url_for('Index'))
 if __name__ == "__main__":
     app.run(debug= True)
