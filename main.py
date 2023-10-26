@@ -27,14 +27,13 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
 
 class Assignment(db.Model):
-    id = db.Column(db.String(21), primary_key = True)
+    id = db.Column(db.Integer, primary_key = True)
     summarize = db.Column(LONGTEXT)
     issumm = db.Column(db.Integer)
     filepath = db.Column(db.String(100))
     question = db.Column(LONGTEXT)
 
-    def __init__(self, id, summarize, issumm, filepath, question):
-        self.id = id
+    def __init__(self, summarize, issumm, filepath, question):
         self.summarize = summarize
         self.issumm = issumm
         self.filepath = filepath
@@ -214,11 +213,10 @@ def new_question(result):
 def process_uploaded_file():
     # Nhận đường dẫn của file
     uploaded_file_path = request.form['uploaded_file_path']
-    ass_id = generate_id(10)
     summ = summarize_file(uploaded_file_path)
     question = new_question(summ)
     # thêm record vào csdl
-    my_data = Assignment(ass_id, "content summarized", 1, str(uploaded_file_path), str(question))
+    my_data = Assignment("content summarized", 1, str(uploaded_file_path), str(question))
     db.session.add(my_data)
     db.session.commit()
     return question
