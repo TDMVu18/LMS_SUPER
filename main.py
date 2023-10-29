@@ -7,7 +7,10 @@ import difflib
 import random
 import string
 import numpy as np
-from transformers import T5ForConditionalGeneration, T5Tokenizer
+from transformers import T5ForConditionalGeneration, T5Tokenizer, BertTokenizer, BertModel
+from nltk.corpus import stopwords
+from sklearn.neighbors import NearestNeighbors
+from sklearn.metrics.pairwise import cosine_similarity
 import json
 import re
 from sqlalchemy.dialects.mysql import LONGTEXT
@@ -26,48 +29,62 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-class Assignment(db.Model):
-    id = db.Column(db.Integer, primary_key = True)
-    summarize = db.Column(LONGTEXT)
-    issumm = db.Column(db.Integer)
-    filepath = db.Column(db.String(100))
-    question = db.Column(LONGTEXT)
+# class Assignment(db.Model):
+#     id = db.Column(db.Integer, primary_key = True)
+#     summarize = db.Column(LONGTEXT)
+#     description = db.Column(db.String(255))
+#     issumm = db.Column(db.Integer)
+#     filepath = db.Column(db.String(100))
+#     question = db.Column(LONGTEXT)
 
-    def __init__(self, summarize, issumm, filepath, question):
-        self.summarize = summarize
-        self.issumm = issumm
-        self.filepath = filepath
-        self.question = question
+#     def __init__(self, summarize, description, issumm, filepath, question):
+#         self.summarize = summarize
+#         self.description = description
+#         self.issumm = issumm
+#         self.filepath = filepath
+#         self.question = question
         
-class Submit(db.Model):
-    id = db.Column(db.String(21), primary_key = True)
-    answer = db.Column(db.String(255))
-    corrected_answer = db.Column(db.String(255))
-    rank = db.Column(db.String(100))
-    id_ass = db.Column(db.String(21))
-    id_user = db.Column(db.String(21))
+# class Writing_submit(db.Model):
+#     id = db.Column(db.Integer, primary_key = True)
+#     answer = db.Column(LONGTEXT)
+#     corrected_answer = db.Column(db.String(255))
+#     rank = db.Column(db.String(100))
+#     id_ass = db.Column(db.Integer)
+#     id_user = db.Column(db.Integer)
 
-    def __init__(self, id, answer, corrected_answer, rank, id_ass, id_user):
-        self.id = id
-        self.answer = answer
-        self.corrected_answer = corrected_answer
-        self.rank = rank
-        self.id_ass = id_ass
-        self.id_user = id_user
+#     def __init__(self, answer, corrected_answer, rank, id_ass, id_user):
+#         self.answer = answer
+#         self.corrected_answer = corrected_answer
+#         self.rank = rank
+#         self.id_ass = id_ass
+#         self.id_user = id_user
 
-# Recommend khóa học
+# class Fromfile_submit(db.Model):
+#     id = db.Column(db.Integer, primary_key = True)
+#     answer = db.Column(LONGTEXT)
+#     factcheck = db.Column(db.String(100))
+#     id_ass = db.Column(db.Integer)
+#     id_user = db.Column(db.Integer)
+
+#     def __init__(self, answer, factcheck, id_ass, id_user):
+#         self.answer = answer
+#         self.factcheck = factcheck
+#         self.id_ass = id_ass
+#         self.id_user = id_user
+
+# # Recommend khóa học
 # course = pd.read_csv("archive/course.csv")
 # course = course.drop(['Unnamed: 0', 'Course_id'], axis=1)
 # course_ids = [str(i).zfill(4) for i in range(1, len(course) + 1)]
 
 # # Thêm cột "Course_id" vào DataFrame
 # course.insert(0, 'Course_id', course_ids)
-def generate_id(length):
-    characters = string.ascii_letters + string.digits
+# def generate_id(length):
+#     characters = string.ascii_letters + string.digits
 
-    random_string = ''.join(random.choice(characters) for _ in range(length))
+#     random_string = ''.join(random.choice(characters) for _ in range(length))
 
-    return random_string
+#     return random_string
 
 # history = pd.read_csv("history.csv", encoding='latin-1')
 # data = list(history['History_course_id'].apply(lambda x:x.split(",") ))
@@ -108,17 +125,117 @@ def generate_id(length):
 
 #     consequent_names_str = ', '.join(consequent_names)
 
+# def preprocess_text(text):
+#     stopwords_eng = stopwords.words("english")
+#     text = text.lower()
+#     text = text.replace(",", "").replace(".", "").replace("!", "").replace("?", "")
+#     text = re.sub(r"[\W\d_]+", " ", text)
+#     text = [pal for pal in text.split() if pal not in stopwords_eng]
+#     spc_text = spc_en(" ".join(text))
+#     tokens = [word.lemma_ if word.lemma_ != "-PRON-" else word.lower_ for word in spc_text]
+#     return " ".join(tokens)
+
+
+# def cosine_similarity(vector1, vector2):
+#     # Chuyển đổi các vector cột thành vector hàng
+#     vector1 = vector1.reshape(1, -1)
+#     vector2 = vector2.reshape(1, -1)
+    
+#     dot_product = np.dot(vector1, vector2.T)  # Sử dụng vector thứ hai chuyển vị
+#     norm1 = np.linalg.norm(vector1)
+#     norm2 = np.linalg.norm(vector2)
+#     similarity = dot_product / (norm1 * norm2)
+#     return similarity[0, 0]
+
+
+# def euclidean_distance(vector1, vector2):
+#     # Tính hiệu của hai vector
+#     diff = vector1 - vector2
+    
+#     # Tính khoảng cách Euclidean bằng cách tính norm của hiệu
+#     distance = np.linalg.norm(diff)
+#     return distance
+
+
+# # Hàm mã hoá câu với BERT
+# tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+# model = BertModel.from_pretrained("bert-base-uncased")
+
+# def encode_sequence_with_bert(sequence):
+#     # Tiền xử lý và mã hoá câu
+#     input_ids = tokenizer(preprocess_text(sequence), return_tensors="pt").input_ids
+#     with torch.no_grad():
+#         outputs = model(input_ids)
+#         hidden_states = outputs.last_hidden_state.mean(dim=1).squeeze().numpy()
+
+#     return hidden_states
+
+# def nearest_bert(new_sentence):
+#     # Tiền xử lý và mã hoá câu mới với BERT
+#     encoded_new_sentence = encode_sequence_with_bert(new_sentence)
+
+#     # Chuyển đổi chuỗi số thực từ cột BERT_Encoded thành ma trận 2D
+#     bert_encoded_matrix = course['BERT_Encoded'].apply(lambda x: np.fromstring(x[1:-1], sep=' '))
+#     bert_encoded_matrix = np.vstack(bert_encoded_matrix)
+
+#     # Tạo mô hình KNN với k=5 (tìm 5 câu giống nhất)
+#     knn_model = NearestNeighbors(n_neighbors=5, metric='cosine')
+#     knn_model.fit(bert_encoded_matrix)
+
+#     # Tìm 5 câu giống với câu mới nhất trong BERT_Encoded
+#     nearest_neighbors = knn_model.kneighbors([encoded_new_sentence], n_neighbors=5)
+
+#     print("Description:")
+#     print(new_sentence)
+#     print("\nNearest Course:")
+#     for i, neighbor_index in enumerate(nearest_neighbors[1][0]):
+#         neighbor_sequence = course.at[neighbor_index, "Course Name"]
+#         neighbor_specialized = course.at[neighbor_index, "Specialized"]
+
+#         print(f"Neighbor {i + 1}: {neighbor_sequence} -- Specialized: {neighbor_specialized}")
+
+# course = pd.read_csv("archive/course.csv", index_col=0)
+
+# # Load cột IDF đã mã hoá
+# idf_encoded_matrix = course["BERT_Encoded"].apply(lambda x: np.fromstring(x[1:-1], sep=' '))
+# idf_encoded_matrix = np.vstack(idf_encoded_matrix)
+
+# knn_model = NearestNeighbors(n_neighbors=5, metric='cosine')
+# knn_model.fit(idf_encoded_matrix)
+
+# def find_nearest_courses(course_id, num):
+#     # Tìm vector IDF của khoá học cụ thể
+#     course_index = course[course["Course_id"] == course_id].index[0]
+#     course_idf_vector = idf_encoded_matrix[course_index]
+
+#     # Tìm 5 khoá gần nhất với khoá học cụ thể
+#     nearest_neighbors = knn_model.kneighbors([course_idf_vector], n_neighbors=num)
+
+#     # print(f"Course ID: {course_id}")
+#     # print("\nNearest Courses:")
+    
+#     recommended_course_ids = []
+#     for i, neighbor_index in enumerate(nearest_neighbors[1][0]):
+#         neighbor_course_id = course.at[neighbor_index, "Course_id"]
+#         recommended_course_ids.append(neighbor_course_id)
+#         neighbor_course_name = course.at[neighbor_index, "Course Name"]
+#         # print(f"Neighbor {i + 1}: Course ID {neighbor_course_id} -- {neighbor_course_name}")
+
+#     return recommended_course_ids
+
+
 # def recommend_courses(enrolled_courses, df_ar, num_recommendations=5):
 #     # Tạo một danh sách để lưu trữ các khoá học được đề xuất
 #     recommended_courses = []
 
 #     # Duyệt qua từng tập luật kết hợp trong df_ar
+
 #     for index, row in df_ar.iterrows():
 #         antecedents = row['antecedents']
 #         consequents = row['consequents']
 
-#         # Chuyển các ID trong antecedents thành các ID không có khoảng cách
-#         antecedents_cleaned = [course_id.replace(" ", "") for course_id in antecedents]
+#         # Chuyển các ID trong antecedents thành các ID không có khoảng cách và thành chuỗi
+#         antecedents_cleaned = [str(course_id).replace(" ", "") for course_id in antecedents]
 
 #         # Kiểm tra nếu có ít nhất một khoá học từ antecedents có trong danh sách enrolled_courses
 #         if any(course_id in antecedents_cleaned for course_id in enrolled_courses):
@@ -128,6 +245,16 @@ def generate_id(length):
 #     # Loại bỏ các khoá học đã đăng ký và lặp lại
 #     recommended_courses = list(set(recommended_courses) - set(enrolled_courses))
 
+#     # Kiểm tra số lượng khoá học được đề xuất, nếu ít hơn 5, tìm thêm các khoá học gần nhất
+#     if len(recommended_courses) < num_recommendations and  len(recommended_courses) != 0 :
+
+#         num_to_find = (num_recommendations - len(recommended_courses)) / len(recommended_courses)
+        
+#         for course_id in enrolled_courses:
+#             recommended_courses.extend(find_nearest_courses(int(course_id), int(num_to_find)))
+        
+#     # Loại bỏ các khoá học trùng lặp (nếu có)
+#     recommended_courses = list(set(recommended_courses))
 #     # Chọn một số lượng giới hạn của khoá học để đề xuất
 #     if len(recommended_courses) > num_recommendations:
 #         recommended_courses = recommended_courses[:num_recommendations]
@@ -146,8 +273,8 @@ def generate_id(length):
 # model = T5ForConditionalGeneration.from_pretrained(model_name).to(torch_device)
 
 # def correct_grammar(input_text,num_return_sequences):
-#   batch = tokenizer([input_text],truncation=True,padding='max_length',max_length=64, return_tensors="pt").to(torch_device)
-#   translated = model.generate(**batch,max_length=64,num_beams=4, num_return_sequences=num_return_sequences, temperature=1.5)
+#   batch = tokenizer([input_text],truncation=True,padding='max_length',max_length=128, return_tensors="pt").to(torch_device)
+#   translated = model.generate(**batch,max_length=128,num_beams=2, num_return_sequences=num_return_sequences, temperature=1.5)
 #   tgt_text = tokenizer.batch_decode(translated, skip_special_tokens=True)
 #   return tgt_text
 
@@ -160,7 +287,7 @@ def generate_id(length):
 #         if word.startswith(' '):
 #             highlighted_diff.append(word[2:])
 #         elif word.startswith('- '):
-#             highlighted_diff.append('<span style="background-color: 7ED957;">{}</span>'.format(word[2:]))
+#             highlighted_diff.append('<span style="background-color: #7ED957;">{}</span>'.format(word[2:]))
     
 #     highlighted_sentence = ' '.join(highlighted_diff)
 
@@ -199,29 +326,42 @@ def new_question(result):
     pick_summ = len(result)
     summ_cal = random.sample(range(pick_summ), 3)
     question = []
+    summ_res = []
     for i in range(len(summ_cal)):
         text = result[summ_cal[i]]["summary"]
+        summ_res.append(text)
         q  = qg.generate(text, num_questions=1)
         question.append(q)
-    return question
+    return question, summ_res
 
 
 
 
 
-@app.route('/get-file-path', methods=['POST'])
+@app.route('/questions-generate', methods=['POST'])
 def process_uploaded_file():
     # Nhận đường dẫn của file
     uploaded_file_path = request.form['uploaded_file_path']
     summ = summarize_file(uploaded_file_path)
-    question = new_question(summ)
+    question, summ_res = new_question(summ)
+    result = []
+    for i in range(len(question)):
+        dictq = {}
+        dictq['id'] = i+1
+        for j in range(len(question[i])):
+            dictq['question'] = question[i][j]['question']
+            dictq['answer'] = question[i][j]['answer']
+        result.append(dictq)   
+    summ_result = []
+    for i in range(len(summ_res)):
+        dicts = {}
+        dicts['id'] = i+1
+        dicts['summarize'] = summ_res[i]
+        summ_result.append(dicts)      
     # thêm record vào csdl
-    my_data = Assignment("content summarized", 1, str(uploaded_file_path), str(question))
-    db.session.add(my_data)
-    db.session.commit()
-    return question
+    return jsonify({'summarize_texts': summ_result}, {'questions_generated': result})
 
-# @app.route('/recommend-id', methods=['POST'])
+# @app.route('/recommend-course', methods=['POST'])
 # def apriori():
 #     data = request.get_json()
 
@@ -238,28 +378,32 @@ def process_uploaded_file():
 #         course_dict = dict(zip(course['Course_id'], course['Course Name']))
 #         for course_id in enrolled:
 #             clean_course_id = course_id.replace(" ", "")
-#             course_name = course_dict.get(clean_course_id, 'Not Found') 
+#             course_name = course_dict.get(clean_course_id, 'Not Found')
 #         for course_id in recommend:
-#             clean_course_id = course_id.replace(" ", "")
-#             course_name = course_dict.get(clean_course_id, 'Not Found') 
+#             clean_course_id = str(course_id).replace(" ", "")
+#             course_name = course_dict.get(clean_course_id, 'Not Found')
 #             if clean_course_id not in enrolled:
 #                 target = int(clean_course_id)
 #                 course_target.append(target)
 #         print(course_target)
-#         return course_target
+#         return jsonify({'recommended_list':course_target})
 #     else:
 #         return jsonify({'Error': 'Request Failed UwU'})
     
 # @app.route('/grammar-correct', methods=['POST'])
 # def grammar_corr():
-#     my_data = Submit.query.get(id)
+#     data = request.form
+#     row_id = int(data.get('id'))
+#     my_data = db.session.query(Writing_submit).filter_by(id=row_id).first()
 #     sentence = my_data.answer
 #     correct_list = correct_grammar(sentence, 2)
 #     for i in range(2):
 #         correct_list[i] = highlight(correct_list[i], sentence)    
     
-#     my_data.corrected_answer = str(correct_list) 
+#     my_data.corrected_answer = str(correct_list)
 #     db.session.commit()
 #     return correct_list
 if __name__ == "__main__":
     app.run(debug= True)
+
+    
