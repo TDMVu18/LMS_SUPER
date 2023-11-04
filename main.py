@@ -611,7 +611,7 @@ def grammar_corr():
     for i in range(len(corrected_texts)):
         dictc = {}
         dictc['id'] = i+1
-        dictc['corrected_text'] = "<p>"+highlight(corrected_texts[i],sentence)+"</p>"
+        dictc['corrected_text'] = "<p>"+highlight(sentence, corrected_texts[i])+"</p>"
         corrected_result.append(dictc) 
     spell_result = []
     for i in range(len(corrections)):
