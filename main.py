@@ -360,7 +360,7 @@ def spell_checker(sentence):
     corrected_text = ' '.join(corrected_sentence)
     return corrected_text, corrections
 
-def highlight(correct_sentence, error_Sentence, color):
+def highlight(correct_sentence, error_Sentence):
     differ = difflib.Differ()
     diff = list(differ.compare(correct_sentence.split(), error_Sentence.split()))
 
@@ -369,7 +369,7 @@ def highlight(correct_sentence, error_Sentence, color):
         if word.startswith(' '):
             highlighted_diff.append(word[2:])
         elif word.startswith('- '):
-            highlighted_diff.append('<span style="background-color:'+color+';">{}</span>'.format(word[2:]))
+            highlighted_diff.append('<span class="ml-error-word">{}</span>'.format(word[2:]))
     
     highlighted_sentence = ' '.join(highlighted_diff)
 
@@ -611,7 +611,7 @@ def grammar_corr():
     for i in range(len(corrected_texts)):
         dictc = {}
         dictc['id'] = i+1
-        dictc['corrected_text'] = "<p>"+highlight(corrected_texts[i],sentence,"#7ED957")+"</p>"
+        dictc['corrected_text'] = "<p>"+highlight(corrected_texts[i],sentence)+"</p>"
         corrected_result.append(dictc) 
     spell_result = []
     for i in range(len(corrections)):
