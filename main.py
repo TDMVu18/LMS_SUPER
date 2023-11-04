@@ -363,14 +363,15 @@ def spell_checker(sentence):
 def highlight(correct_sentence, error_Sentence):
     differ = difflib.Differ()
     diff = list(differ.compare(correct_sentence.split(), error_Sentence.split()))
+    diff_cr = list(differ.compare(error_Sentence.split(), correct_sentence.split()))
 
     highlighted_diff = []
-    for word in diff:
+    for i, word in enumerate(diff):
         if word.startswith(' '):
             highlighted_diff.append(word[2:])
         elif word.startswith('- '):
             highlighted_diff.append('<span class="ml-error-word">{}</span>'.format(word[2:]))
-    
+            highlighted_diff.append(diff_cr[i][1:])
     highlighted_sentence = ' '.join(highlighted_diff)
 
     return highlighted_sentence
