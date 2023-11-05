@@ -27,53 +27,6 @@ spc_en = en_core_web_sm.load()
 app = Flask(__name__)
 app.secret_key = "Secret Key"
 
-app.config["SQLALCHEMY_DATABASE_URI"] = 'mysql://root:''@localhost/lms'
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-db = SQLAlchemy(app)
-
-class Assignment(db.Model):
-    id = db.Column(db.Integer, primary_key = True)
-    summarize = db.Column(LONGTEXT)
-    description = db.Column(db.String(255))
-    issumm = db.Column(db.Integer)
-    filepath = db.Column(db.String(100))
-    question = db.Column(LONGTEXT)
-
-    def __init__(self, summarize, description, issumm, filepath, question):
-        self.summarize = summarize
-        self.description = description
-        self.issumm = issumm
-        self.filepath = filepath
-        self.question = question
-        
-class Writing_submit(db.Model):
-    id = db.Column(db.Integer, primary_key = True)
-    answer = db.Column(LONGTEXT)
-    corrected_answer = db.Column(db.String(255))
-    rank = db.Column(db.String(100))
-    id_ass = db.Column(db.Integer)
-    id_user = db.Column(db.Integer)
-
-    def __init__(self, answer, corrected_answer, rank, id_ass, id_user):
-        self.answer = answer
-        self.corrected_answer = corrected_answer
-        self.rank = rank
-        self.id_ass = id_ass
-        self.id_user = id_user
-
-class Fromfile_submit(db.Model):
-    id = db.Column(db.Integer, primary_key = True)
-    answer = db.Column(LONGTEXT)
-    factcheck = db.Column(db.String(100))
-    id_ass = db.Column(db.Integer)
-    id_user = db.Column(db.Integer)
-
-    def __init__(self, answer, factcheck, id_ass, id_user):
-        self.answer = answer
-        self.factcheck = factcheck
-        self.id_ass = id_ass
-        self.id_user = id_user
 
 # DEF Recommend khóa học
 
@@ -363,15 +316,14 @@ def spell_checker(sentence):
 def highlight(correct_sentence, error_Sentence):
     differ = difflib.Differ()
     diff = list(differ.compare(correct_sentence.split(), error_Sentence.split()))
-    diff_cr = list(differ.compare(error_Sentence.split(), correct_sentence.split()))
 
     highlighted_diff = []
-    for i, word in enumerate(diff):
+    for word in diff:
         if word.startswith(' '):
             highlighted_diff.append(word[2:])
         elif word.startswith('- '):
             highlighted_diff.append('<span class="ml-error-word">{}</span>'.format(word[2:]))
-            highlighted_diff.append(diff_cr[i][1:])
+    
     highlighted_sentence = ' '.join(highlighted_diff)
 
     return highlighted_sentence
@@ -612,12 +564,12 @@ def grammar_corr():
     for i in range(len(corrected_texts)):
         dictc = {}
         dictc['id'] = i+1
-        dictc['corrected_text'] = "<p>"+highlight(sentence, corrected_texts[i])+"</p>"
+        dictc['corrected_text'] = corrected_texts[i]
         corrected_result.append(dictc) 
     spell_result = []
     for i in range(len(corrections)):
         dictsp = {}
-        dictsp['error'] = list(corrections.keys())[i]
+        dictsp['wrong'] = list(corrections.keys())[i]
         dictsp['correct'] = list(corrections.values())[i]
         spell_result.append(dictsp)
     wrong_grammar, wrong_spelling = identify_error_types(corrected_texts[0].split('\n'), sentence.split('\n'), corrections)
@@ -625,6 +577,7 @@ def grammar_corr():
     w_tense = []
     for sentence_wr in wrong_grammar:
         w_tense.append(predict_tense(sentence_wr, tense_model, tense_tokenizer, tense_labels))
+    print(wrong_grammar)
     for i in range(len(wrong_grammar)):
         dictgr = {}
         dictgr['sentence'] = wrong_grammar[i]
